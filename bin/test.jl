@@ -40,9 +40,9 @@ const alphabet = 1:alphabet_size
 neighbor_dependencies = zeros( alphabet_size, alphabet_size, alphabet_size )
 
 neighbor_dependencies[1, 1, 2] = 0.01
-neighbor_dependencies[2, 2, 1] = 0.01
+neighbor_dependencies[2, 2, 1] = 0.02
 neighbor_dependencies[1, 2, 1] = 0.1
-neighbor_dependencies[2, 1, 2] = 0.1
+neighbor_dependencies[2, 1, 2] = 0.15
 for a in alphabet
     for b in alphabet
         neighbor_dependencies[a, b, b] = 1 - sum(neighbor_dependencies[a, b, :])
@@ -69,29 +69,31 @@ function contraction( neighbor_dependencies, single_transition, stationary_distr
         live = 3 - live
         diff = maximum(abs.(scratch[live, :, :] - scratch[3-live, :, :])) > 0
     end
-    return scratch[live, :, :]
+    return (single_transition, scratch[live, :, :])
 end
 
 result = contraction( neighbor_dependencies, single_transition, stationary_distribution )
-@time result = contraction( neighbor_dependencies, single_transition, stationary_distribution )
-sum(result)
+@time contraction( neighbor_dependencies, single_transition, stationary_distribution );
+sum(result[1], dims=2)
+sum(result[2])
 
 # order of variables:
 # LHS: p_0->0, p_0->1, p_1->0, p_1->1
 # RHS: p00, p01, p10, p11
+# I should really change this to use higher dimensional tensors
 index( alphabet_size, a, b ) = alphabet_size * (a - 1) + b
 
-function single_transition_tensors( neighbor_dependencies )
+function tensors( neighbor_dependencies )
     alphabet_size = size( neighbor_dependencies, 1 )
     alphabet = 1:alphabet_size
 
     as2 = alphabet_size^2
 
-    A = zeros( as2, 2*as2, as2 )
+    A = zeros( as2, as2, 2*as2 )
     b = zeros( 2*as2, 2*as2 )
     
-    single_transition_A = view( A, 1:as2, 1:as2, 1:as2 )
-    single_transition_b = view( B, 1:as2, 1:as2 )
+    single_transition_A = view( A, :, :, 1:as2 )
+    single_transition_b = view( b, :, : )
     
     for a in alphabet
         for b in alphabet
@@ -102,16 +104,16 @@ function single_transition_tensors( neighbor_dependencies )
                 j = index( alphabet_size, c, a )
 
                 # coefficient for p_a->b * p_ca
-                single_transition_A[i, i, j] = 1.0
+                single_transition_A[j, i, i] = 1.0
                 # coefficient for p_ca
-                single_transition_b[i, j] += - neighbor_dependencies[c, a, b]
+               single_transition_b[i, j] += - neighbor_dependencies[c, a, b]
             end
         end
     end
 
     stationary_distribution_indices = as2 .+ (1:as2)
-    stationary_distribution_A = view( A, 1:as2, stationary_distribution_indices, 1:as2 )
-    stationary_distribution_b = zeros( stationary_distribution_indices, stationary_distribution_indices )
+    stationary_distribution_A = view( A, :, :, stationary_distribution_indices )
+    stationary_distribution_b = view( b, stationary_distribution_indices, stationary_distribution_indices )
     for a in alphabet
         for b in alphabet
             # p_ab equation
@@ -124,7 +126,7 @@ function single_transition_tensors( neighbor_dependencies )
                     # p_cd
                     k = index( alphabet_size, c, d )
                     # coefficient for p_c->A * p_cd
-                    stationary_distribution_A[j, i, k] = - neighbor_dependencies[c, d, b]
+                    stationary_distribution_A[j, k, i] = - neighbor_dependencies[c, d, b]
                 end
             end
         end
@@ -132,3 +134,10 @@ function single_transition_tensors( neighbor_dependencies )
 
     return (A, b)
 end
+
+(A, b) = tensors( neighbor_dependencies )
+
+vst = vec(result[1])
+vsd = vec(result[2]')
+
+vec(sum(A .* vst .* reshape( vsd, (1, alphabet_size.^2) ), dims=(1,2) )) + b * [vst; vsd]
