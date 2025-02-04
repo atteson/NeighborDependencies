@@ -1,3 +1,5 @@
+
+
 function single_transitions!( neighbor_dependencies, single_transition, live, stationary_distribution )
     alphabet_size = size( neighbor_dependencies, 1 )
     alphabest = 1:alphabet_size
@@ -80,7 +82,7 @@ sum(result[2])
 # order of variables:
 # LHS: p_0->0, p_0->1, p_1->0, p_1->1
 # RHS: p00, p01, p10, p11
-# I should really change this to use higher dimensional tensors
+# I should really change this to use higher order tensors
 index( alphabet_size, a, b ) = alphabet_size * (a - 1) + b
 
 function tensors( neighbor_dependencies )
@@ -104,9 +106,9 @@ function tensors( neighbor_dependencies )
                 j = index( alphabet_size, c, a )
 
                 # coefficient for p_a->b * p_ca
-                single_transition_A[j, i, i] = 1.0
+                single_transition_A[i, j, i] = 1.0
                 # coefficient for p_ca
-               single_transition_b[i, j] += - neighbor_dependencies[c, a, b]
+               single_transition_b[i, as2 + j] += - neighbor_dependencies[c, a, b]
             end
         end
     end
@@ -137,7 +139,12 @@ end
 
 (A, b) = tensors( neighbor_dependencies )
 
-vst = vec(result[1])
+vst = vec(result[1]')
 vsd = vec(result[2]')
 
 vec(sum(A .* vst .* reshape( vsd, (1, alphabet_size.^2) ), dims=(1,2) )) + b * [vst; vsd]
+
+vst' * A[:,:,1] * vsd
+
+dot( b[1,:], [vst; vsd] )
+
