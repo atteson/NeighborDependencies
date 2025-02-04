@@ -169,6 +169,7 @@ g = f( A, b )
 x = [vec(single_transition'); vec(stationary_distribution')] 
 g( x )
 
+fidi = hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...)
 maximum(abs.(hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...) - D))
 
 function Newton( A, b, x; epsilon=1e-15 )
@@ -187,7 +188,16 @@ function Newton( A, b, x; epsilon=1e-15 )
 end
 
 @time Newton( A, b, x )
-@time Newton( A, b, x );
+@time (x, i) = Newton( BigFloat.(A), BigFloat.(b), BigFloat.(x), epsilon=BigFloat(1e-20) );
+bigA = BigFloat.(A)
+bigb = BigFloat.(b)
+bigx = BigFloat.(x)
+
+hi = reshape( sum(bigA .* reshape( x[a2.+(1:a2)], (1, a2 ) ), dims=2 ), (a2, 2*a2) )
+lo = reshape( sum(bigA .* x[1:a2], dims=1 ), (a2, 2*a2) )
+D = [hi; lo]' + bigb
+delta = inv(D)*g(bigx)
+x -= delta
 
 y = vcat(vec.(transpose.(result))...)
 hcat((g.([y] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(y)])./1e-8...)
@@ -195,3 +205,17 @@ hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./
 
 g(x)
 g(y)
+
+using Utilities
+using Distributions
+using Random
+
+Random.seed!( 1 )
+s = rand( [1,2], 1_000_000 );
+for i = 1:100
+    s = rand.( Categorical.(deaccumulate( (x,y) -> getindex( neighbor_dependencies, x, y, : ), s )) );
+end
+mean(s .== 1)
+sum(result[2], dims=1)
+mean((s[1:end-1] .== 1) .& (s[2:end] .== 1))
+mean((s[1:end-1] .== 2) .& (s[2:end] .== 2))
