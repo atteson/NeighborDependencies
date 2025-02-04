@@ -2,7 +2,7 @@
 
 function single_transitions!( neighbor_dependencies, single_transition, live, stationary_distribution )
     alphabet_size = size( neighbor_dependencies, 1 )
-    alphabest = 1:alphabet_size
+    alphabet = 1:alphabet_size
     
     for a in alphabet
         for b in alphabet
@@ -18,9 +18,17 @@ function single_transitions!( neighbor_dependencies, single_transition, live, st
     return single_transition
 end
 
+function calculate_single_transition( neighbor_dependencies, stationary_distribution )
+    alphabet_size = size( neighbor_dependencies, 1 )
+    single_transition = zeros( alphabet_size, alphabet_size )
+    stationary_distribution = reshape( stationary_distribution, ( 1, alphabet_size, alphabet_size ) )
+    single_transitions!( neighbor_dependencies, single_transition, 1, stationary_distribution )
+    return single_transition
+end
+
 function stationary_distributions!( neighbor_dependencies, single_transition, live, stationary_distribution )
     alphabet_size = size( neighbor_dependencies, 1 )
-    alphabest = 1:alphabet_size
+    alphabet = 1:alphabet_size
     
     for a in alphabet
         for b in alphabet
@@ -139,12 +147,51 @@ end
 
 (A, b) = tensors( neighbor_dependencies )
 
+function f( A, b )
+    a2 = size( A, 1 )
+    return x -> vec(sum(A .* x[1:a2] .* reshape( x[a2+1:2*a2], (1, a2) ), dims=(1,2))) + b * x
+end
+
 vst = vec(result[1]')
 vsd = vec(result[2]')
 
 vec(sum(A .* vst .* reshape( vsd, (1, alphabet_size.^2) ), dims=(1,2) )) + b * [vst; vsd]
+f( A, b )( [vst;vsd] )
 
 vst' * A[:,:,1] * vsd
 
 dot( b[1,:], [vst; vsd] )
 
+single_transition = [0.9 0.1; 0.05 0.95]
+
+a2 = size( A, 1 )
+g = f( A, b )
+x = [vec(single_transition'); vec(stationary_distribution')] 
+g( x )
+
+maximum(abs.(hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...) - D))
+
+function Newton( A, b, x; epsilon=1e-15 )
+    i = 0
+    delta = fill( Inf, length(x) )
+    epsilon = 1e-15
+    while maximum(abs.(delta)) >= epsilon
+        hi = reshape( sum(A .* reshape( x[a2.+(1:a2)], (1, a2 ) ), dims=2 ), (a2, 2*a2) )
+        lo = reshape( sum(A .* x[1:a2], dims=1 ), (a2, 2*a2) )
+        D = [hi; lo]' + b
+        delta = pinv(D)*g(x)
+        x = x - delta
+        i += 1
+    end
+    return (x, i)
+end
+
+@time Newton( A, b, x )
+@time Newton( A, b, x );
+
+y = vcat(vec.(transpose.(result))...)
+hcat((g.([y] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(y)])./1e-8...)
+hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...)
+
+g(x)
+g(y)
