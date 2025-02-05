@@ -93,113 +93,106 @@ sum(result[2])
 # I should really change this to use higher order tensors
 index( alphabet_size, a, b ) = alphabet_size * (a - 1) + b
 
-function tensors( neighbor_dependencies )
+function f( neighbor_dependencies )
     alphabet_size = size( neighbor_dependencies, 1 )
     alphabet = 1:alphabet_size
+    a2 = alphabet_size^2
 
-    as2 = alphabet_size^2
-
-    A = zeros( as2, as2, 2*as2 )
-    b = zeros( 2*as2, 2*as2 )
-    
-    single_transition_A = view( A, :, :, 1:as2 )
-    single_transition_b = view( b, :, : )
-    
-    for a in alphabet
-        for b in alphabet
-            # p_a->b equation
-            i = index( alphabet_size, a, b )
-            for c in alphabet
-                # p_ca
-                j = index( alphabet_size, c, a )
-
-                # coefficient for p_a->b * p_ca
-                single_transition_A[i, j, i] = 1.0
-                # coefficient for p_ca
-               single_transition_b[i, as2 + j] += - neighbor_dependencies[c, a, b]
+    return (x; y = zeros( 2 * alphabet_size^2 )) -> begin
+        for a in alphabet
+            for b in alphabet
+                numerator = 0.0
+                denominator = 0.0
+                for c in alphabet
+                    j = a2 + index( alphabet_size, c, a )
+                    numerator -= neighbor_dependencies[c, a, b] * x[j]
+                    denominator += x[j]
+                end
+                i = index( alphabet_size, a, b )
+                y[i] = x[i] + numerator/denominator
             end
         end
-    end
-
-    stationary_distribution_indices = as2 .+ (1:as2)
-    stationary_distribution_A = view( A, :, :, stationary_distribution_indices )
-    stationary_distribution_b = view( b, stationary_distribution_indices, stationary_distribution_indices )
-    for a in alphabet
-        for b in alphabet
-            # p_ab equation
-            i = index( alphabet_size, a, b )
-            stationary_distribution_b[i, i] = 1.0
-            for c in alphabet
-                # p_c->a coefficients
-                j = index( alphabet_size, c, a )
-                for d in alphabet
-                    # p_cd
-                    k = index( alphabet_size, c, d )
-                    # coefficient for p_c->A * p_cd
-                    stationary_distribution_A[j, k, i] = - neighbor_dependencies[c, d, b]
+    
+        for a in alphabet
+            for b in alphabet
+                i = a2 + index( alphabet_size, a, b )
+                y[i] = x[i]
+                for c in alphabet
+                    j = index( alphabet_size, c, a )
+                    for d in alphabet
+                        k = a2 + index( alphabet_size, c, d )
+                        y[i] -= x[k] * x[j] * neighbor_dependencies[c, d, b]
+                    end
                 end
             end
         end
+        return y
     end
-
-    return (A, b)
 end
 
-(A, b) = tensors( neighbor_dependencies )
+function Df( neighbor_dependencies )
+    alphabet_size = size( neighbor_dependencies, 1 )
+    alphabet = 1:alphabet_size
+    a2 = alphabet_size^2
 
-function f( A, b )
-    a2 = size( A, 1 )
-    return x -> vec(sum(A .* x[1:a2] .* reshape( x[a2+1:2*a2], (1, a2) ), dims=(1,2))) + b * x
+    return (x; dy = zeros( 2 * a2, 2 * a2 )) -> begin
+        for a in alphabet
+            for b in alphabet
+                numerator = 0.0
+                denominator = 0.0
+                for c in alphabet
+                    j = a2 + index( alphabet_size, c, a )
+                    numerator -= neighbor_dependencies[c, a, b] * x[j]
+                    denominator += x[j]
+                end
+                i = index( alphabet_size, a, b )
+                for c in alphabet
+                    j = a2 + index( alphabet_size, c, a )
+                    dy[i,j] = (-denominator * neighbor_dependencies[c, a, b] - numerator)/denominator^2
+                end
+                dy[i,i] += 1
+            end
+        end
+    
+        for a in alphabet
+            for b in alphabet
+                i = a2 + index( alphabet_size, a, b )
+                dy[i,i] = 1
+                for c in alphabet
+                    j = index( alphabet_size, c, a )
+                    for d in alphabet
+                        k = a2 + index( alphabet_size, c, d )
+                        dy[i,k] -= x[j] * neighbor_dependencies[c, d, b]
+                        dy[i,j] -= x[k] * neighbor_dependencies[c, d, b]
+                    end
+                end
+            end
+        end
+        return dy
+    end
 end
 
 vst = vec(result[1]')
 vsd = vec(result[2]')
 
-vec(sum(A .* vst .* reshape( vsd, (1, alphabet_size.^2) ), dims=(1,2) )) + b * [vst; vsd]
-f( A, b )( [vst;vsd] )
-
-vst' * A[:,:,1] * vsd
-
-dot( b[1,:], [vst; vsd] )
-
 single_transition = [0.9 0.1; 0.05 0.95]
+x = [vec(single_transition'); vec(stationary_distribution')]
 
-a2 = size( A, 1 )
-g = f( A, b )
-x = [vec(single_transition'); vec(stationary_distribution')] 
+f( neighbor_dependencies )( [vst; vsd] )
+
+g = f( neighbor_dependencies )
 g( x )
+dy = Df( neighbor_dependencies )( x )
 
+using LinearAlgebra
+
+a2 = alphabet_size^2
 fidi = hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...)
-maximum(abs.(hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...) - D))
-
-function Newton( A, b, x; epsilon=1e-15 )
-    i = 0
-    delta = fill( Inf, length(x) )
-    epsilon = 1e-15
-    while maximum(abs.(delta)) >= epsilon
-        hi = reshape( sum(A .* reshape( x[a2.+(1:a2)], (1, a2 ) ), dims=2 ), (a2, 2*a2) )
-        lo = reshape( sum(A .* x[1:a2], dims=1 ), (a2, 2*a2) )
-        D = [hi; lo]' + b
-        delta = pinv(D)*g(x)
-        x = x - delta
-        i += 1
-    end
-    return (x, i)
-end
+@assert( maximum(abs.(dy - fidi)) .< 1e-6 )
 
 @time Newton( A, b, x )
 @time (x, i) = Newton( BigFloat.(A), BigFloat.(b), BigFloat.(x), epsilon=BigFloat(1e-20) );
-bigA = BigFloat.(A)
-bigb = BigFloat.(b)
-bigx = BigFloat.(x)
 
-hi = reshape( sum(bigA .* reshape( x[a2.+(1:a2)], (1, a2 ) ), dims=2 ), (a2, 2*a2) )
-lo = reshape( sum(bigA .* x[1:a2], dims=1 ), (a2, 2*a2) )
-D = [hi; lo]' + bigb
-delta = inv(D)*g(bigx)
-x -= delta
-
-y = vcat(vec.(transpose.(result))...)
 hcat((g.([y] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(y)])./1e-8...)
 hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...)
 
