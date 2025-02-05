@@ -116,16 +116,20 @@ function f( neighbor_dependencies )
         for a in alphabet
             for b in alphabet
                 i = a2 + index( alphabet_size, a, b )
-                y[i] = x[i]
+                last = i == 2 * a2
+                y[i] = last ? 1.0 : x[i]
                 for c in alphabet
                     j = index( alphabet_size, c, a )
                     for d in alphabet
                         k = a2 + index( alphabet_size, c, d )
-                        y[i] -= x[k] * x[j] * neighbor_dependencies[c, d, b]
+                        # if this is the last equation, replace it with unity sum
+                        y[i] -= last ? x[k] : x[k] * x[j] * neighbor_dependencies[c, d, b]
                     end
                 end
             end
         end
+
+            
         return y
     end
 end
@@ -157,13 +161,18 @@ function Df( neighbor_dependencies )
         for a in alphabet
             for b in alphabet
                 i = a2 + index( alphabet_size, a, b )
-                dy[i,i] = 1
+                last = i == 2 * a2
+                dy[i,i] = last ? 0 : 1
                 for c in alphabet
                     j = index( alphabet_size, c, a )
                     for d in alphabet
                         k = a2 + index( alphabet_size, c, d )
-                        dy[i,k] -= x[j] * neighbor_dependencies[c, d, b]
-                        dy[i,j] -= x[k] * neighbor_dependencies[c, d, b]
+                        if last
+                            dy[i,k] -= 1.0
+                        else
+                            dy[i,k] -= x[j] * neighbor_dependencies[c, d, b]
+                            dy[i,j] -= x[k] * neighbor_dependencies[c, d, b]
+                        end
                     end
                 end
             end
@@ -172,12 +181,16 @@ function Df( neighbor_dependencies )
     end
 end
 
-function Newton( neighbor_dependencies, x )
+function Newton( neighbor_dependencies, x; epsilon = 1e-15 )
     g = f( neighbor_dependencies )
     dg = Df( neighbor_dependencies )
 
     delta = inv(dg(x))*g(x)
-    x = x - delta
+    while norm(delta) >= epsilon
+        x = x - delta
+        delta = inv(dg(x))*g(x)
+    end
+    return x
 end
 
 vst = vec(result[1]')
@@ -185,7 +198,8 @@ vsd = vec(result[2]')
 
 single_transition = [0.9 0.1; 0.05 0.95]
 x = [vec(single_transition'); vec(stationary_distribution')]
-xinf = [vst; vsd]
+Newton( neighbor_dependencies, x )
+@time Newton( neighbor_dependencies, x );
 
 f( neighbor_dependencies )( [vst; vsd] )
 
