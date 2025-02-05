@@ -172,11 +172,20 @@ function Df( neighbor_dependencies )
     end
 end
 
+function Newton( neighbor_dependencies, x )
+    g = f( neighbor_dependencies )
+    dg = Df( neighbor_dependencies )
+
+    delta = inv(dg(x))*g(x)
+    x = x - delta
+end
+
 vst = vec(result[1]')
 vsd = vec(result[2]')
 
 single_transition = [0.9 0.1; 0.05 0.95]
 x = [vec(single_transition'); vec(stationary_distribution')]
+xinf = [vst; vsd]
 
 f( neighbor_dependencies )( [vst; vsd] )
 
@@ -189,15 +198,6 @@ using LinearAlgebra
 a2 = alphabet_size^2
 fidi = hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...)
 @assert( maximum(abs.(dy - fidi)) .< 1e-6 )
-
-@time Newton( A, b, x )
-@time (x, i) = Newton( BigFloat.(A), BigFloat.(b), BigFloat.(x), epsilon=BigFloat(1e-20) );
-
-hcat((g.([y] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(y)])./1e-8...)
-hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...)
-
-g(x)
-g(y)
 
 using Utilities
 using Distributions
