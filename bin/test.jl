@@ -1,4 +1,7 @@
-
+using LinearAlgebra
+using Utilities
+using Distributions
+using Random
 
 function single_transitions!( neighbor_dependencies, single_transition, live, stationary_distribution )
     alphabet_size = size( neighbor_dependencies, 1 )
@@ -207,22 +210,129 @@ g = f( neighbor_dependencies )
 g( x )
 dy = Df( neighbor_dependencies )( x )
 
-using LinearAlgebra
-
 a2 = alphabet_size^2
 fidi = hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...)
 @assert( maximum(abs.(dy - fidi)) .< 1e-6 )
 
-using Utilities
-using Distributions
+function simulate( neighbor_dependencies, m, n; seed=1 )
+    Random.seed!( seed )
+    s = rand( [1,2], m );
+    for i = 1:n
+        s = rand.( Categorical.(deaccumulate( (x,y) -> getindex( neighbor_dependencies, x, y, : ), s )) );
+    end
+    return s
+end
+
+separate( a ) =
+    let sizes = size(a), p = length(sizes)-1
+        if p == 0
+            a
+        else
+            [separate( getindex( a, i, fill( :, p )... ) ) for i in 1:sizes[1]]
+        end
+    end
+
+recursive_index( v::Vector{Float64}, s, i, j )::Vector{Float64} = v
+
+recursive_index( a, s, i, j )::Vector{Float64} = recursive_index( a[s[i, j]], s, i, j+1 )
+
+
+simulate2( neighbor_dependencies, m, n, seed=1 ) =
+    let sizes = size( neighbor_dependencies )
+        simulate2( separate( cumsum( neighbor_dependencies, dims=length(sizes) ) ), sizes, m, n, seed )
+    end
+
+function simulate2( cums::Vector, sizes, m, n, seed=1 )
+    Random.seed!( seed )
+
+    alphabet_size = sizes[1]
+    p = length(sizes)-1
+    
+    s = Matrix{Int}( undef, 2, m )
+    rand!( view( s, 1, : ), 1:alphabet_size )
+    curr = 1
+    
+    for i = 1:n
+        for j = 1:m-(p-1)*i
+            println( j )
+            cum = recursive_index( cums, s, curr, j )
+            r = rand()
+            l = 1
+            while r > cum[l]
+                l += 1
+            end
+            s[3-curr, j] = l
+        end
+        curr = 3 - curr
+    end
+    return view( s, curr, 1:m-(p-1)*n )
+end
+
+seed = 1
+m = 1_000_000
+n = 100
+i = 1
+j = 1
+cums = separate( neighbor_dependencies )
+sizes = size( neighbor_dependencies )
+
+@time s = simulate( neighbor_dependencies, 1_000_000, 100 );
+
+@time s = simulate2( neighbor_dependencies, 1_000_000, 100, 1 );
+
+@code_warntype simulate2( neighbor_dependencies, 1_000_000, 100, 1 )
+
+using ProfileView
+using Profile
+Profile.clear()
+@profile simulate2( neighbor_dependencies, 1_000_000, 100 );
+ProfileView.view()
+
+result[2]
+trimmed_mean( s, m ) = [mean((s[m:end-m] .== a) .& (s[m+1:end-m+1].==b)) for a in alphabet, b in alphabet]
+trimmed_mean( s, 1 ) ./ result[2] .- 1
+trimmed_mean( s, 100 ) ./ result[2] .- 1
+trimmed_mean( s, 1_000 ) ./ result[2] .- 1
+
+recursive_index( a::Vector{Float64}, s, i, j ) = a
+recursive_index( a, s, i, j ) = recursive_index( a[s[i,j]], s, i, j+1 )
+
+recursive_length( a::Float64 ) = ()
+recursive_length( a ) = (length(a), recursive_length(a[1])...)
+
 using Random
 
-Random.seed!( 1 )
-s = rand( [1,2], 1_000_000 );
-for i = 1:100
-    s = rand.( Categorical.(deaccumulate( (x,y) -> getindex( neighbor_dependencies, x, y, : ), s )) );
+index_all( a, m, n ) = index_all( separate(a), m, n )
+
+function index_all( a::Vector, m, n )
+    alphabet_size = size(a, 1)
+    dims = length(recursive_length(a))
+
+    s = Matrix{Int}( undef, 2, m )
+    curr = 1
+    rand!( view( s, curr, : ), 1:alphabet_size )
+    for i = 1:n
+        for j = 1:m-i*(dims-1)
+            cum_dist = recursive_index( a, s, curr, j )
+            r = rand()
+            l = 1
+            while r > cum_dist[l]
+                l += 1
+            end
+            s[3-curr, j] = l
+        end
+        curr = 3 - curr
+    end
+    return view( s, curr )
 end
-mean(s .== 1)
-sum(result[2], dims=1)
-mean((s[1:end-1] .== 1) .& (s[2:end] .== 1))
-mean((s[1:end-1] .== 2) .& (s[2:end] .== 2))
+
+A = stack([[0.1 1.0; 0.2 1.0], [0.3 1.0; 0.4 1.0]], dims=1)
+separate(A)
+a = [[[0.1, 1.0], [0.2, 1.0]], [[0.3, 1.0], [0.4, 1.0]]]
+m = 1_000_000
+n = 100
+@time s = index_all( A, m, n );
+@time s = index_all( a, m, n );
+
+length(s)
+
