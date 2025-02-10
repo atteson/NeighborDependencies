@@ -270,20 +270,15 @@ s = simulate( neighbor_dependencies, 1_000_000, 100 );
 s = simulate( neighbor_dependencies, 1_000_000, 100 );
 @time s = simulate( neighbor_dependencies, 1_000_000, 100 );
 
-recat_inner( x ) = if isbitstype(eltype(x))
+recat( x ) = if isbitstype(eltype(x))
     x
 else
-    let y = recat_inner.( x )
-        cat( y..., dims=length(size(y[1]))+1 )
+    let y = recat.( x )
+        stack( y, dims=1 )
     end
 end
 
-recat( x ) = let y = recat_inner( x )
-    permutedims( y, length(size(y)):-1:1 )
-end
-
 neighbor_dependencies = recat( [[[0.99 0.01; 0.98 0.02], [0.03 0.97; 0.04 0.96]], [[0.95 0.05; 0.94 0.06], [0.07 0.93; 0.08 0.92]]] )
-neighbor_dependencies = recat( [[[0.99 0.01; 0.98 0.02]', [0.03 0.97; 0.04 0.96]'], [[0.95 0.05; 0.94 0.06]', [0.07 0.93; 0.08 0.92]']] )
 
 @time s = simulate( neighbor_dependencies, 1_000_000, 100 );
 
