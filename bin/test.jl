@@ -2,6 +2,7 @@ using LinearAlgebra
 using Utilities
 using Distributions
 using Random
+using IterTools
 
 function single_transitions!( neighbor_dependencies, single_transition, live, stationary_distribution )
     alphabet_size = size( neighbor_dependencies, 1 )
@@ -214,15 +215,6 @@ a2 = alphabet_size^2
 fidi = hcat((g.([x] .+ getindex.([1e-8 * I[1:2*a2,1:2*a2]], 1:2*a2, [:] )) .- [g(x)])./1e-8...)
 @assert( maximum(abs.(dy - fidi)) .< 1e-6 )
 
-function simulate( neighbor_dependencies, m, n; seed=1 )
-    Random.seed!( seed )
-    s = rand( [1,2], m );
-    for i = 1:n
-        s = rand.( Categorical.(deaccumulate( (x,y) -> getindex( neighbor_dependencies, x, y, : ), s )) );
-    end
-    return s
-end
-
 separate( a ) =
     let sizes = size(a), p = length(sizes)-1
         if p == 0
@@ -282,3 +274,28 @@ neighbor_dependencies = recat( [[[0.99 0.01; 0.98 0.02], [0.03 0.97; 0.04 0.96]]
 
 @time s = simulate( neighbor_dependencies, 1_000_000, 100 );
 
+function circular_transition_probabilities( neighbor_dependencies, m )
+    tuples = reduce( vcat, product( fill( 1:2, m )... ) )
+    neighborhoods = collect.(partition.( map( t -> (t[end], t..., t[1]), tuples ), 3, 1 ))
+    indices = vec( map( x -> ((y,z) -> (y...,z)).(x[1], x[2]), product( neighborhoods, tuples ) ) )
+
+    sizes = size( neighbor_dependencies )
+    ps = separate( neighbor_dependencies )
+
+    N = 1 << m
+    return (tuples, reshape((i -> prod( reduce.( getindex, i, init=ps ) )).( indices ), (N,N)))
+end
+
+function circular_stationary_distribution( neighbor_dependencies, m )
+    N = 1 << m
+    (tuples, P) = circular_transition_probabilities( neighbor_dependencies, m )
+    return (tuples, vec([fill(0,N-1);1]' * inv([(I - P)[:,1:N-1] fill(1,N)])))
+end
+
+pi3 = circular_stationary_distribution( neighbor_dependencies, 3 )
+pi4 = circular_stationary_distribution( neighbor_dependencies, 4 )
+
+pi4[1][9]
+sum(pi4[2][1:2])
+pi4[2][1]+pi4[2][9]
+pi3[2][1]
