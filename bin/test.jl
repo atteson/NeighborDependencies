@@ -274,6 +274,17 @@ neighbor_dependencies = recat( [[[0.99 0.01; 0.98 0.02], [0.03 0.97; 0.04 0.96]]
 
 @time s = simulate( neighbor_dependencies, 1_000_000, 100 );
 
+find_pattern( s, p ) = let n = length(p)
+    (s[1:end-n+1] .== p[1]) .& if n > 1; find_pattern( s[2:end], p[2:end] ); else true; end
+end
+
+mean(find_pattern( s, [1] ))
+mean(find_pattern( s, [2] ))
+mean(find_pattern( s, [1,1] ))
+mean(find_pattern( s, [1,2] ))
+mean(find_pattern( s, [2,1] ))
+mean(find_pattern( s, [2,2] ))
+
 function circular_transition_probabilities( neighbor_dependencies, m )
     tuples = reduce( vcat, product( fill( 1:2, m )... ) )
     neighborhoods = collect.(partition.( map( t -> (t[end], t..., t[1]), tuples ), 3, 1 ))
@@ -299,3 +310,4 @@ pi4[1][9]
 sum(pi4[2][1:2])
 pi4[2][1]+pi4[2][9]
 pi3[2][1]
+
