@@ -239,23 +239,21 @@ function simulate( cums::Vector, sizes, m, n; seed=1 )
     alphabet_size = sizes[1]
     p = length(sizes)-1
     
-    s = Matrix{Int}( undef, 2, m )
+    s = zeros( Int, n, m )
     rand!( view( s, 1, : ), 1:alphabet_size )
-    curr = 1
     
-    for i = 1:n
-        for j = 1:m-(p-1)*i
-            cum = recursive_index( cums, s, curr, j )
+    for i = 2:n
+        for j = 1:m-(p-1)*(i-1)
+            cum = recursive_index( cums, s, i-1, j )
             r = rand()
             l = 1
             while r > cum[l]
                 l += 1
             end
-            s[3-curr, j] = l
+            s[i, j] = l
         end
-        curr = 3 - curr
     end
-    return view( s, curr, 1:m-(p-1)*n )
+    return s
 end
 
 s = simulate( neighbor_dependencies, 1_000_000, 100 );
@@ -274,16 +272,74 @@ neighbor_dependencies = recat( [[[0.99 0.01; 0.98 0.02], [0.03 0.97; 0.04 0.96]]
 
 @time s = simulate( neighbor_dependencies, 1_000_000, 100 );
 
-find_pattern( s, p ) = let n = length(p)
-    (s[1:end-n+1] .== p[1]) .& if n > 1; find_pattern( s[2:end], p[2:end] ); else true; end
+find_pattern( s, pat ) = let n = length(pat)
+    (s[1:end-n+1] .== pat[1]) .& if n > 1; find_pattern( s[2:end], pat[2:end] ); else true; end
 end
 
-mean(find_pattern( s, [1] ))
-mean(find_pattern( s, [2] ))
-mean(find_pattern( s, [1,1] ))
-mean(find_pattern( s, [1,2] ))
-mean(find_pattern( s, [2,1] ))
-mean(find_pattern( s, [2,2] ))
+mean(find_pattern( s[100,1:end-198], [1] ))
+mean(find_pattern( s[100,1:end-198], [2] ))
+mean(find_pattern( s[100,1:end-198], [1,1] ))
+mean(find_pattern( s[100,1:end-198], [1,2] ))
+mean(find_pattern( s[100,1:end-198], [2,1] ))
+mean(find_pattern( s[100,1:end-198], [2,2] ))
+
+function arrow( s, n, p, from, to )
+    x = find_pattern( s[n-1, 1:end - (p-1)*(n-2)], from )
+    y = find_pattern( s[n, 1:end - (p-1)*(n-1)], to )
+    return sum( x .& y )/sum( y )
+end
+
+arrow( s, 100, 3, [1,1,1], [1] )
+arrow( s, 100, 3, [1,2,1], [1] )
+
+function semicolon( s, n, p, from, to )
+    x = find_pattern( s[n-1, 1:end - (p-1)*(n-2)], from )
+    y = find_pattern( s[n, 1:end - (p-1)*(n-1)], to )
+    return mean( x .& y )
+end
+
+semicolon.( [s], [n], [p], reduce( vcat, product( fill( 1:2, 3 )... ) ), [1] )
+
+function f1( n, m )
+    y = 0
+    t = 0.0
+    for i in 1:n
+#        t -= time()
+        x = i % m
+#        t += time()
+        y = y + x
+    end
+    return (t, y)
+end
+
+function f2( n, m )
+    m -= 1
+    y = 0
+    t = 0.0
+    for i in 1:n
+#        t -= time()
+        x = i & m
+#        t += time()
+        y = y + x
+    end
+    return (t, y)
+end
+
+function f3( n, m )
+    y = 0
+    t = 0.0
+    for i in 1:n
+        t -= time()
+        t += time()
+    end
+    return (t, y)
+end
+
+@time f1( 100_000_000, 64 )
+@time f2( 100_000_000, 64 )
+f3( 100_000_000, 64 )
+
+@code_native f1( 100, 100 )
 
 function circular_transition_probabilities( neighbor_dependencies, m )
     tuples = reduce( vcat, product( fill( 1:2, m )... ) )
