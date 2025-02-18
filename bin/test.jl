@@ -270,7 +270,7 @@ end
 
 neighbor_dependencies = recat( [[[0.99 0.01; 0.98 0.02], [0.03 0.97; 0.04 0.96]], [[0.95 0.05; 0.94 0.06], [0.07 0.93; 0.08 0.92]]] )
 
-@time s = simulate( neighbor_dependencies, 1_000_000, 100 );
+@time s = simulate( neighbor_dependencies, 10_000_000, 100 );
 
 find_pattern( s, pat ) = let n = length(pat)
     (s[1:end-n+1] .== pat[1]) .& if n > 1; find_pattern( s[2:end], pat[2:end] ); else true; end
@@ -283,63 +283,43 @@ mean(find_pattern( s[100,1:end-198], [1,2] ))
 mean(find_pattern( s[100,1:end-198], [2,1] ))
 mean(find_pattern( s[100,1:end-198], [2,2] ))
 
-function arrow( s, n, p, from, to )
-    x = find_pattern( s[n-1, 1:end - (p-1)*(n-2)], from )
-    y = find_pattern( s[n, 1:end - (p-1)*(n-1)], to )
-    return sum( x .& y )/sum( y )
+function find_patterns( s, n, p, from, to; offset = 0 )
+    m = size(s,2)
+    
+    priorstart = max(2 + offset, 1)
+    posteriorstart = max(-offset, 1)
+    priorend = m - (p-1)*(n-2)
+    posteriorend = m - (p-1)*(n-1)
+
+    priorlen = priorend - priorstart - length(from) + 1
+    posteriorlen = posteriorend - posteriorstart - length(to) + 1
+    len = min( priorlen, posteriorlen )
+
+    priorend = priorstart + len + length(from) - 1
+    posteriorend = posteriorstart + len + length(to) - 1
+    
+    x = find_pattern( s[n-1, priorstart:priorend], from );
+    y = find_pattern( s[n, posteriorstart:posteriorend], to );
+    return (x,y)
 end
 
-arrow( s, 100, 3, [1,1,1], [1] )
-arrow( s, 100, 3, [1,2,1], [1] )
+function arrow( s, n, p, from, to; offset = 0 )
+    (x, y) = find_patterns( s, n, p, from, to, offset = offset )
+    return sum( x .& y )/sum( x )
+end
 
-function semicolon( s, n, p, from, to )
-    x = find_pattern( s[n-1, 1:end - (p-1)*(n-2)], from )
-    y = find_pattern( s[n, 1:end - (p-1)*(n-1)], to )
+error = similar( neighbor_dependencies )
+for t in reduce( vcat, product( fill( 1:2, 4 )... ) )
+    error[t...] = arrow( s, 100, 3, collect(t[1:end-1]), collect(t[end:end]), offset=-1 )/neighbor_dependencies[t...] - 1
+end
+maximum(abs.(error))
+
+function semicolon( s, n, p, from, to; offset=0 )
+    (x, y) = find_patterns( s, n, p, from, to, offset = offset )
     return mean( x .& y )
 end
 
 semicolon.( [s], [n], [p], reduce( vcat, product( fill( 1:2, 3 )... ) ), [1] )
-
-function f1( n, m )
-    y = 0
-    t = 0.0
-    for i in 1:n
-#        t -= time()
-        x = i % m
-#        t += time()
-        y = y + x
-    end
-    return (t, y)
-end
-
-function f2( n, m )
-    m -= 1
-    y = 0
-    t = 0.0
-    for i in 1:n
-#        t -= time()
-        x = i & m
-#        t += time()
-        y = y + x
-    end
-    return (t, y)
-end
-
-function f3( n, m )
-    y = 0
-    t = 0.0
-    for i in 1:n
-        t -= time()
-        t += time()
-    end
-    return (t, y)
-end
-
-@time f1( 100_000_000, 64 )
-@time f2( 100_000_000, 64 )
-f3( 100_000_000, 64 )
-
-@code_native f1( 100, 100 )
 
 function circular_transition_probabilities( neighbor_dependencies, m )
     tuples = reduce( vcat, product( fill( 1:2, m )... ) )
