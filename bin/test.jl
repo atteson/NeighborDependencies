@@ -310,7 +310,7 @@ end
 
 error = similar( neighbor_dependencies )
 for t in reduce( vcat, product( fill( 1:2, 4 )... ) )
-    error[t...] = arrow( s, 100, 3, collect(t[1:end-1]), collect(t[end:end]), offset=-1 )/neighbor_dependencies[t...] - 1
+    error[t...] = arrow( s, 100, 3, t[1:end-1], t[end:end], offset=-1 )/neighbor_dependencies[t...] - 1
 end
 maximum(abs.(error))
 
@@ -346,4 +346,41 @@ pi4[1][9]
 sum(pi4[2][1:2])
 pi4[2][1]+pi4[2][9]
 pi3[2][1]
+
+neighbor_dependencies = zeros( alphabet_size, alphabet_size, alphabet_size )
+
+neighbor_dependencies[1, 1, 2] = 0.01
+neighbor_dependencies[2, 2, 1] = 0.02
+neighbor_dependencies[1, 2, 1] = 0.1
+neighbor_dependencies[2, 1, 2] = 0.15
+for a in alphabet
+    for b in alphabet
+        neighbor_dependencies[a, b, b] = 1 - sum(neighbor_dependencies[a, b, :])
+    end
+end
+
+@time s = simulate( neighbor_dependencies, 10_000_000, 100 );
+
+neighbor_error = similar( neighbor_dependencies )
+equation_error = zeros( fill( 2, 4 )... )
+theoretical_error = similar( neighbor_dependencies )
+for t in reduce( vcat, product( fill( 1:2, 4 )... ) )
+#    t = first( reduce( vcat, product( fill( 1:2, 4 )... ) ) )
+    pbb = arrow( s, 100, 2, t[1:2], t[3:4], offset=0 )
+    pbl = arrow( s, 100, 2, t[1:2], t[3:3], offset=0 )
+    pbr = arrow( s, 100, 2, t[1:2], t[4:4], offset=-1 )
+    pll = arrow( s, 100, 2, t[1:1], t[3:3], offset=0 )
+    neighbor_error[t[1], t[2], t[4]] = pbr/neighbor_dependencies[t[1], t[2], t[4]] - 1
+    equation_error[t...] = pbl*pbr/pbb - 1
+    theoretical_error[t[1:3]...] = pll/pbl - 1
+end
+
+maximum(abs.(neighbor_error))
+maximum(abs.(equation_error))
+maximum(abs.(theoretical_error))
+    
+arrow( s, 100, 2, [1,1], [1,1], offset=0 )
+arrow( s, 100, 2, [1,1], [1], offset=0 ) * arrow( s, 100, 2, [1,1], [1], offset=-1 )
+
+arrow( s, 100, 2, [1], [1], offset=0 )
 
